@@ -53,3 +53,8 @@ void Log(int a, string b, Guid correlationId);
 `b` is a string since no converter was specified for type `Bar`, and it's not a natively supported EventSource type.
 So it would require specifying a `fallbackConverter`, which always returns a string.
 In this example, it would attempt to convert `Bar` to JSON.
+
+
+## Building
+
+Open `EventSourceExtensions.sln` in Visual Studio 2017
