@@ -47,7 +47,7 @@ The actual EventSource implementation would have this signature:
 
 ```csharp
 [Event(1)]
-void Foo(int a, string b, Guid correlationId);
+void Log(int a, string b, Guid correlationId);
 ```
 
 `b` is a string since no converter was specified for type `Bar`, and it's not a natively supported EventSource type.
