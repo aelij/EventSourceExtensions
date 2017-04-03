@@ -60,6 +60,7 @@ namespace EventSourceExtensions
             private const long EventKeywordsAll = -1;
 
             private static readonly Type[] EmptyTypes = new Type[0];
+            private static readonly object[] EmptyArray = new object[0];
 
             private readonly EventSourceTypeGenerator _generator;
             private readonly Type _interfaceType;
@@ -183,7 +184,7 @@ namespace EventSourceExtensions
                     _type.SetCustomAttribute(new CustomAttributeBuilder(
                         // ReSharper disable once AssignNullToNotNullAttribute
                         typeof(EventSourceAttribute).GetTypeInfo().GetConstructor(false, EmptyTypes),
-                        null));
+                        EmptyArray));
                 }
                 else
                 {
@@ -192,9 +193,10 @@ namespace EventSourceExtensions
                     {
                         name += "-" + string.Join("-", _interfaceType.GetTypeInfo().GenericTypeArguments.Select(x => x.Name));
                     }
+
                     _type.SetCustomAttribute(new CustomAttributeBuilder(
                         // ReSharper disable once AssignNullToNotNullAttribute
-                        typeof(EventSourceAttribute).GetTypeInfo().GetConstructor(false, EmptyTypes), null,
+                        typeof(EventSourceAttribute).GetTypeInfo().GetConstructor(false, EmptyTypes), EmptyArray,
                         new[] { typeof(EventSourceAttribute).GetTypeInfo().GetDeclaredProperty(nameof(EventSourceAttribute.Name)) },
                         new object[] { name }));
                 }
@@ -313,7 +315,7 @@ namespace EventSourceExtensions
                 method.SetCustomAttribute(new CustomAttributeBuilder(
                     // ReSharper disable once AssignNullToNotNullAttribute
                     typeof(NonEventAttribute).GetTypeInfo().GetConstructor(false, EmptyTypes),
-                    null));
+                    EmptyArray));
             }
 
             private static void GenerateEventMethodBody(List<ParameterData> parameters, ILGenerator il,
