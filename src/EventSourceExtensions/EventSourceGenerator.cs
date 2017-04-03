@@ -13,18 +13,19 @@ namespace EventSourceExtensions
         private readonly EventSourceConfiguration _configuration;
 
         public EventSourceGenerator(EventSourceConfiguration configuration = null,
-            Func<object, string> fallbackConverter = null)
-            : this(configuration, fallbackConverter, false)
+            Func<object, string> fallbackConverter = null,
+            bool generateAutomaticEventIds = false)
+            : this(configuration, fallbackConverter, generateAutomaticEventIds, false)
         {
         }
 
-        internal EventSourceGenerator(EventSourceConfiguration configuration = null, Func<object, string> fallbackConverter = null, bool saveDebugAssembly = false)
+        internal EventSourceGenerator(EventSourceConfiguration configuration = null, Func<object, string> fallbackConverter = null, bool generateAutomaticEventIds = false, bool saveDebugAssembly = false)
         {
             _fallbackConverter = fallbackConverter;
             _instances = new ConcurrentDictionary<Type, Lazy<EventSource>>();
             _configuration = (configuration ?? EventSourceConfiguration.Empty).Index();
             _configurationDelegates = _configuration?.ToDelegateArray();
-            _typeGenerator = new EventSourceTypeGenerator(_configuration, saveDebugAssembly);
+            _typeGenerator = new EventSourceTypeGenerator(_configuration, generateAutomaticEventIds, saveDebugAssembly);
         }
 
 #if NET46

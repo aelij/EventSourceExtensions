@@ -23,10 +23,13 @@ namespace EventSourceExtensions
         private readonly ConcurrentDictionary<Type, Type> _typeCache;
         private readonly EventSourceConfiguration _configuration;
         // ReSharper disable once NotAccessedField.Local
+        private readonly bool _generateAutomaticEventIds;
+
         private readonly bool _saveDebugAssembly;
 
-        public EventSourceTypeGenerator(EventSourceConfiguration configuration = null, bool saveDebugAssembly = false)
+        public EventSourceTypeGenerator(EventSourceConfiguration configuration = null, bool generateAutomaticEventIds = false, bool saveDebugAssembly = false)
         {
+            _generateAutomaticEventIds = generateAutomaticEventIds;
             _saveDebugAssembly = saveDebugAssembly;
             _configuration = configuration ?? EventSourceConfiguration.Empty;
             const string moduleName = AssemblyName + ".dll";
@@ -52,7 +55,7 @@ namespace EventSourceExtensions
 
         public Type GenerateType(Type interfaceType, EventSourceConfiguration configurationOverride = null)
         {
-            return _typeCache.GetOrAdd(interfaceType, _ => new TypeGenerator(this, interfaceType, configurationOverride).Generate());
+            return _typeCache.GetOrAdd(interfaceType, _ => new TypeGenerator(this, interfaceType, configurationOverride, _generateAutomaticEventIds).Generate());
         }
 
         private sealed class TypeGenerator
@@ -64,6 +67,7 @@ namespace EventSourceExtensions
 
             private readonly EventSourceTypeGenerator _generator;
             private readonly Type _interfaceType;
+            private readonly bool _generateAutomaticEventIds;
             private readonly EventSourceConfiguration _configuration;
 
             private TypeBuilder _type;
@@ -71,17 +75,18 @@ namespace EventSourceExtensions
             private FieldBuilder _fallbackConverterField;
             private MethodBuilder _fallbackConverterGetter;
 
-            public TypeGenerator(EventSourceTypeGenerator generator, Type interfaceType, EventSourceConfiguration configurationOverride)
+            public TypeGenerator(EventSourceTypeGenerator generator, Type interfaceType, EventSourceConfiguration configurationOverride, bool generateAutomaticEventIds)
             {
                 _generator = generator;
                 _interfaceType = interfaceType;
+                _generateAutomaticEventIds = generateAutomaticEventIds;
                 _configuration = configurationOverride ?? _generator._configuration;
             }
 
             public Type Generate()
             {
                 var name = _interfaceType.Name;
-                if (name.StartsWith("I", StringComparison.OrdinalIgnoreCase)) name = name.Substring(1);
+                if (name.StartsWith("I", StringComparison.Ordinal)) name = name.Substring(1);
 
                 _type = _generator._module.DefineType(_interfaceType.Namespace + "." + name, TypeAttributes.Public,
                     typeof(EventSource), new[] { _interfaceType });
@@ -95,8 +100,9 @@ namespace EventSourceExtensions
                 GenerateConstructor();
 
                 var ids = new HashSet<int>();
+                var methodsToGenerate = new List<(MethodInfo method, EventAttribute attribute)>();
 
-                foreach (var memberInfo in _interfaceType.GetTypeInfo().DeclaredMembers)
+                foreach (var memberInfo in GetDeclaredMembers(_interfaceType))
                 {
                     var methodInfo = memberInfo as MethodInfo;
                     if (methodInfo == null)
@@ -112,19 +118,37 @@ namespace EventSourceExtensions
                     var eventAttributeInstance = methodInfo.GetCustomAttribute<EventAttribute>();
                     if (eventAttributeInstance == null)
                     {
-                        throw new InvalidOperationException($"Missing Event attribute ({methodInfo})");
+                        if (!_generateAutomaticEventIds)
+                        {
+                            throw new InvalidOperationException($"Missing Event attribute ({methodInfo})");
+                        }
                     }
-                    if (!ids.Add(eventAttributeInstance.EventId))
+                    else if (!ids.Add(eventAttributeInstance.EventId))
                     {
                         throw new InvalidOperationException($"Duplicate event ID ({methodInfo})");
                     }
 
-                    GenerateMethod(methodInfo, eventAttributeInstance);
+                    methodsToGenerate.Add((methodInfo, eventAttributeInstance));
+                }
+
+                var currentId = ids.Any() ? ids.Max() + 1 : 1;
+
+                foreach (var method in methodsToGenerate)
+                {
+                    GenerateMethod(method.method, method.attribute ?? new EventAttribute(currentId++));
                 }
 
                 var generatedType = _type.CreateTypeInfo().AsType();
 
                 return generatedType;
+            }
+
+            private static IEnumerable<MemberInfo> GetDeclaredMembers(Type type)
+            {
+                return type.GetTypeInfo().ImplementedInterfaces.Reverse()
+                    .Except(new[] { typeof(IDisposable) })
+                    .Concat(new[] { type })
+                    .SelectMany(c => c.GetTypeInfo().DeclaredMembers);
             }
 
             private void DefineFallbackConverter()
@@ -185,21 +209,21 @@ namespace EventSourceExtensions
                         // ReSharper disable once AssignNullToNotNullAttribute
                         typeof(EventSourceAttribute).GetTypeInfo().GetConstructor(false, EmptyTypes),
                         EmptyArray));
-                }
-                else
-                {
-                    var name = eventSourceAttribute.Name;
-                    if (_interfaceType.GetTypeInfo().IsGenericType)
-                    {
-                        name += "-" + string.Join("-", _interfaceType.GetTypeInfo().GenericTypeArguments.Select(x => x.Name));
-                    }
 
-                    _type.SetCustomAttribute(new CustomAttributeBuilder(
-                        // ReSharper disable once AssignNullToNotNullAttribute
-                        typeof(EventSourceAttribute).GetTypeInfo().GetConstructor(false, EmptyTypes), EmptyArray,
-                        new[] { typeof(EventSourceAttribute).GetTypeInfo().GetDeclaredProperty(nameof(EventSourceAttribute.Name)) },
-                        new object[] { name }));
+                    return;
                 }
+
+                var name = eventSourceAttribute.Name;
+                if (_interfaceType.GetTypeInfo().IsGenericType)
+                {
+                    name += "-" + string.Join("-", _interfaceType.GetTypeInfo().GenericTypeArguments.Select(x => x.Name));
+                }
+
+                _type.SetCustomAttribute(new CustomAttributeBuilder(
+                    // ReSharper disable once AssignNullToNotNullAttribute
+                    typeof(EventSourceAttribute).GetTypeInfo().GetConstructor(false, EmptyTypes), EmptyArray,
+                    new[] { typeof(EventSourceAttribute).GetTypeInfo().GetDeclaredProperty(nameof(EventSourceAttribute.Name)) },
+                    new object[] { name }));
             }
 
             private void GenerateMethod(MethodInfo sourceMethodInfo, EventAttribute eventAttributeInstance)
@@ -233,7 +257,7 @@ namespace EventSourceExtensions
                 }
 
                 parameters.AddRange(addedParameters);
-                parameters.AddRange(_configuration.GetParameters().Select(mapper => 
+                parameters.AddRange(_configuration.GetParameters().Select(mapper =>
                     new ParameterData(null, mapper.Name, mapper.Index, mapper.Func)));
 
                 return parameters;

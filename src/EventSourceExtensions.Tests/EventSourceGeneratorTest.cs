@@ -51,6 +51,45 @@ namespace EventSourceExtensions.Tests
         }
 
         [Fact]
+        public async Task EventIdWithoutAttribute()
+        {
+            var expected = 1;
+            _generator = CreateGenerator(generateAutomaticEventIds: true);
+            using (var eventSource = _generator.Get<ITestLogNoAttributes>())
+            {
+                await (eventSource as EventSource).ListenAndAssertAsync(
+                    () => eventSource.Test(expected),
+                    data => Assert.Equal(expected, data.PayloadValue(0)));
+            }
+        }
+
+        [Fact]
+        public async Task DerivedInterfaces()
+        {
+            var expected = 1;
+            _generator = CreateGenerator();
+            using (var eventSource = _generator.Get<ITestLogDerived>())
+            {
+                await (eventSource as EventSource).ListenAndAssertAsync(
+                    () => eventSource.Derived(expected),
+                    data => Assert.Equal(expected, data.PayloadValue(0)));
+            }
+        }
+
+        [Fact]
+        public async Task DerivedInterfacesBaseCall()
+        {
+            var expected = 1;
+            _generator = CreateGenerator();
+            using (var eventSource = _generator.Get<ITestLogDerived>())
+            {
+                await (eventSource as EventSource).ListenAndAssertAsync(
+                    () => eventSource.Base(expected),
+                    data => Assert.Equal(expected, data.PayloadValue(0)));
+            }
+        }
+
+        [Fact]
         public void CustomDataNoFallback_Throws()
         {
             _generator = CreateGenerator();
@@ -65,7 +104,7 @@ namespace EventSourceExtensions.Tests
         [Fact]
         public async Task CustomDataToStringFallback()
         {
-            _generator = CreateGenerator(useToStringFallback: true);
+            _generator = CreateGenerator(false, useToStringFallback: true);
             using (var eventSource = _generator.Get<ITestLogData<CustomData>>())
             {
                 await (eventSource as EventSource).ListenAndAssertAsync(
@@ -77,7 +116,7 @@ namespace EventSourceExtensions.Tests
         [Fact]
         public async Task CustomDataToStringFallback_NullValueToEmptyString()
         {
-            _generator = CreateGenerator(useToStringFallback: true);
+            _generator = CreateGenerator(false, useToStringFallback: true);
             using (var eventSource = _generator.Get<ITestLogData<CustomData>>())
             {
                 await (eventSource as EventSource).ListenAndAssertAsync(
@@ -89,7 +128,7 @@ namespace EventSourceExtensions.Tests
         [Fact]
         public async Task CustomDataMapping_SingleAddedInPlace()
         {
-            _generator = CreateGenerator(configuration: EventSourceConfiguration.Empty
+            _generator = CreateGenerator(false, configuration: EventSourceConfiguration.Empty
                 .WithMapping<CustomData>(m => m.Map(c => 1)));
             using (var eventSource = _generator.Get<ITestLogData<CustomData>>())
             {
@@ -108,7 +147,7 @@ namespace EventSourceExtensions.Tests
         [Fact]
         public async Task CustomDataMapping_DoubleAddedAtEnd()
         {
-            _generator = CreateGenerator(configuration: EventSourceConfiguration.Empty
+            _generator = CreateGenerator(false, configuration: EventSourceConfiguration.Empty
                 .WithMapping<CustomData>(m => m.Map(c => 1, "a").Map(c => 2, "b")));
             using (var eventSource = _generator.Get<ITestLogData<CustomData>>())
             {
@@ -121,7 +160,7 @@ namespace EventSourceExtensions.Tests
         [Fact]
         public async Task AdditionalParameter_AdddedAtEnd()
         {
-            _generator = CreateGenerator(configuration: EventSourceConfiguration.Empty
+            _generator = CreateGenerator(false, configuration: EventSourceConfiguration.Empty
                 .WithAdditionalParameter(() => 1, "x"));
             using (var eventSource = _generator.Get<ITestLogData<int>>())
             {
@@ -131,15 +170,34 @@ namespace EventSourceExtensions.Tests
             }
         }
 
-        private static EventSourceGenerator CreateGenerator(bool useToStringFallback = false, EventSourceConfiguration configuration = null)
+        private static EventSourceGenerator CreateGenerator(bool generateAutomaticEventIds = false, bool useToStringFallback = false, EventSourceConfiguration configuration = null)
         {
             return new EventSourceGenerator(
                 configuration: configuration,
-                fallbackConverter: useToStringFallback ? o => o?.ToString() : (Func<object, string>)null
+                fallbackConverter: useToStringFallback ? o => o?.ToString() : (Func<object, string>)null,
+                generateAutomaticEventIds: generateAutomaticEventIds
 #if SAVE_ASSEMBLIES
                 , saveDebugAssembly: true
 #endif
                 );
+        }
+
+        public interface ITestLogNoAttributes : IDisposable
+        {
+            void Test(int value);
+        }
+
+        public interface ITestLogBase : IDisposable
+        {
+            [Event(1)]
+            void Base(int value);
+        }
+
+        [EventSourceInterface(Name = "ITestLogDerived")]
+        public interface ITestLogDerived : ITestLogBase
+        {
+            [Event(2)]
+            void Derived(int value);
         }
 
         [EventSourceInterface(Name = "TestLogData")]
